@@ -1,0 +1,26 @@
+# The server you want the bot to join
+# The main server is "sim.smogon.com"
+host = "sim.smogon.com"
+
+# The port over which you want to connect to the websocket.
+port = "8000"
+
+# The username your bot will use. Use a name you've registered.
+user = ""
+
+# The password for the above registered username.
+# Be careful about who sees this file.
+# TODO: load password from env
+pass = ""
+
+# The rate at which the bot will send messages.
+# Recommended value is 333 (3 messages per second).
+throttle_ms = 333
+
+# The rooms the bot will automatically join.
+# Keep in mind that bots are not allowed in the lobby.
+rooms = ["showderp"]
+
+# The avatar you want the bot to use.
+# Set to 0 to get a default avatar. Anything from 1 to 294 works.
+avatar = 294
