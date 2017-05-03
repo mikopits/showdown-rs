@@ -170,7 +170,7 @@ impl CacheMap<User> {
 mod tests {
     use ::bot::Bot;
 
-    static TEST_PATH: &'static str = "src/test/test_sensitive.toml";
+    static TEST_PATH: &'static str = "examples/config.toml";
 
     #[test]
     fn add_user_test() {
