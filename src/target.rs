@@ -1,13 +1,12 @@
-use std::collections::BTreeSet;
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::sync::{Arc, Mutex};
 
-use bot::Bot;
+use helpers::sanitize;
 
 /// A `Target` for the bot to reply to.
 pub trait Target: Sync + Clone {
     fn new(name: &str) -> Self;
-    fn send(&self, bot: &Arc<Mutex<Bot>>, s: &str);
+    fn send(&self, bot: &Arc<Mutex<::Bot>>, text: &str);
 }
 
 /// A `Room` implements `Target`. If the bot replies to a chat message from
@@ -29,7 +28,7 @@ impl Target for Room {
         }
     }
 
-    fn send(&self, bot: &Arc<Mutex<Bot>>, text: &str) {
+    fn send(&self, bot: &Arc<Mutex<::Bot>>, text: &str) {
         let to_send = format!("{}|{}", self.name, text);
         if to_send.len() > 300 {
             bot.lock().unwrap().send(&to_send[..299])
@@ -61,6 +60,7 @@ impl Room {
 /// A `User` is uniquely identified by `sanitize`ing its `name`.
 #[derive(Debug, Clone)]
 pub struct User {
+    pub id: String,
     pub name: String,
     auths: Arc<Mutex<HashMap<String, String>>>,
 }
@@ -69,13 +69,14 @@ impl Target for User {
     /// Creates a new `User`
     fn new(name: &str) -> Self {
         User {
+            id: sanitize(name),
             name: String::from(name),
             auths: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
     /// Sends a private message to a `User`.
-    fn send(&self, bot: &Arc<Mutex<Bot>>, text: &str) {
+    fn send(&self, bot: &Arc<Mutex<::Bot>>, text: &str) {
         let to_send = format!("|/w {},{}", self.name, text);
         if to_send.len() > 300 {
             bot.lock().unwrap().send(&to_send[..299])
@@ -163,20 +164,6 @@ impl CacheMap<User> {
             .or_insert(Target::new(u))
             .add_auth(a, r);
     }
-}
-
-/// Removes non-alphanumeric characters from a string.
-/// We define non-alphanumeric as [^0-9a-zA-Z].
-///
-/// Returns the string in lower case to guarantee uniqueness.
-fn sanitize<S: Into<String>>(s: S) -> String {
-    let mut v = &mut s.into().as_bytes().to_vec();
-
-    v.retain(|&b| (b >= 48u8 && b <= 57u8) || // [0-9]
-                  (b >= 65u8 && b <= 90u8) || // [A-Z]
-                  (b >= 97u8 && b <= 122u8)); // [a-z]
-
-    String::from_utf8(v.to_vec()).unwrap().to_lowercase()
 }
 
 #[cfg(test)]

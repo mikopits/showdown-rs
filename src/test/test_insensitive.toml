@@ -1,0 +1,36 @@
+# The server you want the bot to join
+# The main server is "sim.smogon.com"
+host = "sim.smogon.com"
+
+# The port over which you want to connect to the websocket.
+port = "8000"
+
+# The username your bot will use. Use a name you've registered.
+user = "test"
+
+# The password for the above registered username.
+# Be careful about who sees this file.
+# TODO: allow option to read password from env.
+pass = "test"
+
+# The rate at which the bot will send messages.
+# Recommended value is 333 (3 messages per second).
+messages_per_ms = 333
+
+# The rooms the bot will automatically join.
+# Keep in mind that bots are not allowed in the lobby.
+rooms = []
+
+# The avatar you want the bot to use.
+# Set to 0 to get a default avatar. Anything from 1 to 294 works.
+avatar = 294
+
+# The prefixes you want the bot to trigger commands on by default.
+plugin_prefixes = [".", "#"]
+
+# TODO: unimplemented... don't think anybody actually wants this.
+#plugin_suffixes = []
+
+# Set to true if you want your matches to be case sensitive.
+# eg. ".echo ok" and ".EchO ok" will both trigger an event.
+case_sensitive = false

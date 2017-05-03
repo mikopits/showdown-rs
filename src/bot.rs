@@ -1,112 +1,81 @@
-use std::{thread, time};
-use std::collections::BTreeSet;
-use std::collections::HashMap;
-use std::io::{stdin, Read};
-use std::sync::mpsc;
-use std::sync::{Arc, Mutex};
+use std::thread;
+use std::time::Duration;
+use std::collections::{BTreeSet, HashMap};
+use std::io::{Read, stdin};
+use std::path::Path;
+use std::sync::{Arc, Mutex, mpsc};
 
-use reqwest::{Client as HTTPClient};
-use rustc_serialize::json::Json;
-use websocket::Client as WSClient;
-use websocket::{Message as WSMessage, Sender, Receiver};
-use websocket::client::request::Url;
+use serde_json::Value;
+use websocket::{ClientBuilder, Message};
+use websocket::url::Url;
 use websocket::message::Type;
 
-use config::Config;
-use message::Message;
 use target::{CacheMap, Room, User};
 
-/// A `Bot` client that connects to the pokemon showdown server via websocket.
+/// A `Bot` contains all the bot functionality. It is recommended to only use
+/// one bot even on multiple rooms so that all your messages are throttled.
 #[derive(Clone, Debug)]
 pub struct Bot {
-    host: String,
-    port: String,
     pub login_time: u32,
-    pub config: Arc<Config>,
-    rooms_in: Arc<Mutex<BTreeSet<String>>>,
+    pub config: ::Config,
+    rooms_in: BTreeSet<String>,
     pub user_map: CacheMap<User>,
     pub room_map: CacheMap<Room>,
-    tx: Arc<Mutex<mpsc::Sender<WSMessage<'static>>>>,
-    rx: Arc<Mutex<mpsc::Receiver<WSMessage<'static>>>>,
-    /*ptx: Arc<Mutex<mpsc::Sender<&'static Message<'static>>>>,
-    prx: Arc<Mutex<mpsc::Receiver<&'static Message<'static>>>>,*/
+    tx: Arc<Mutex<mpsc::Sender<Message<'static>>>>,
+    rx: Arc<Mutex<mpsc::Receiver<Message<'static>>>>,
+    plugins: Arc<Mutex<Vec<Arc<Mutex<Box<::Plugin>>>>>>
 }
 
 impl Bot {
-    /// Construct a new `Bot`, taking the path to the configuration toml file
-    /// as an argument.
-    ///
-    /// As of now, all fields of the toml file are necessary for the bot to
-    /// compile.
-    pub fn new<S: Into<String>>(config_path: S) -> Self {
+    /// Creates a new `Bot` from a config path. If you are calling cargo run
+    /// from your cargo root, then the config_path root will be the cargo root.
+    /// Returns an Error if the config file is not found.
+    pub fn new<P>(config_path: P) -> ::Result<Bot>
+        where P: AsRef<Path>,
+    {
         let (tx, rx) = mpsc::channel();
-        //let (ptx, prx) = mpsc::channel();
-        let config = Config::new(config_path.into());
-        Bot {
-            host: config.clone().host,
-            port: config.clone().port,
+        Ok(Bot {
             login_time: 0,
-            config: Arc::new(config),
-            rooms_in: Arc::new(Mutex::new(BTreeSet::new())),
+            config: ::Config::new(config_path)?,
+            rooms_in: BTreeSet::new(),
             user_map: CacheMap::new(),
             room_map: CacheMap::new(),
             tx: Arc::new(Mutex::new(tx)),
             rx: Arc::new(Mutex::new(rx)),
-            /*ptx: Arc::new(Mutex::new(ptx)),
-            prx: Arc::new(Mutex::new(prx)),*/
-        }
+            plugins: Arc::new(Mutex::new(Vec::new()))
+        })
     }
 
     /// Initialize the websocket connection to the server. The entrypoint
-    /// method to all Bot functionality and runs the main loop.
-    pub fn connect(&mut self) {
-        let url = match Url::parse(
-            format!("ws://{}:{}/showdown/websocket",
-                    &self.host, &self.port)
-            .as_str()) {
-            Ok(u) => u,
-            Err(e) => {
-                error!("Could not parse url: {:?}", e);
-                return;
-            }
-        };
+    /// method to all Bot functionality and runs the main loop. Returns an
+    /// error if the bot cannot connect to the server.
+    pub fn connect(self) -> ::Result<()> {
+        let url = Url::parse(
+            &format!("ws://{}:{}/showdown/websocket",
+            &self.config.host,
+            &self.config.port))?;
 
         info!("Connecting to {}", url);
-        let request = match WSClient::connect(url) {
-            Ok(r) => r,
-            Err(e) => {
-                error!("Could not connect to client: {:?}", e);
-                return;
-            }
-        };
-
-        let response = match request.send() {
-            Ok(r) => r,
-            Err(e) => {
-                error!("Client request failed: {:?}", e);
-                return;
-            }
-        };
-
-        info!("Validating response...");
-        response.validate().unwrap();
+        let client = ClientBuilder::from_url(&url).connect_insecure()?;
 
         info!("Successfully connected");
-        let (mut sender, mut receiver) = response.begin().split();
-        let self_1 = self.clone();
-        let self_2 = self.clone();
-        let self_3 = Arc::new(Mutex::new(self.clone()));
-        let (tx, rx) = (self_1.tx, self_1.rx);
-        let tx_1 = tx.clone();
+        let (mut receiver, mut sender) = client.split()?;
 
+        let self_1 = Arc::new(Mutex::new(self.clone()));
+        let self_2 = self_1.clone();
+        let tx = self_1.lock().unwrap().to_owned().tx;
+        let rx = self_1.lock().unwrap().to_owned().rx;
+        let tx_1 = tx.clone();
+        let plugins = self.plugins.lock().unwrap().clone();
+
+        debug!("Spawning send loop thread");
         let send_loop = thread::spawn(move || {
             loop {
-                let message: WSMessage = match rx.lock().unwrap().recv() {
+                let message: Message = match rx.lock().unwrap().recv() {
                     Ok(m) => m,
                     Err(e) => {
-                        error!("Send Loop: {:?}", e);
-                        let _ = sender.send_message(&WSMessage::close());
-                        return;
+                        let _ = sender.send_message(&Message::close());
+                        return Err(e)
                     }
                 };
 
@@ -114,68 +83,68 @@ impl Bot {
                 match message.opcode {
                     Type::Close => {
                         let _ = sender.send_message(&message);
-                        return;
+                        return Ok(());
                     },
-                    _ => (),
+                    _ => ()
                 }
 
                 // Stringify the payload
                 let text = match String::from_utf8(
-                    message.clone().payload.into_owned()
-                    ) {
+                    message.clone().payload.into_owned()) {
                     Ok(s) => s,
                     Err(e) => {
                         error!("Send Loop: {:?}", e);
-                        return;
+                        return Ok(());
                     }
                 };
 
-                println!("\x1b[31m↵\x1b[0m{}", text);
+                info!("\x1b[33m↵\x1b[0m{}", text);
 
                 // Send the message
                 match sender.send_message(&message) {
                     Ok(()) => {
-                        let throttle_ms = time::Duration::from_millis(
-                            self_2.config.clone().messages_per_ms);
-                        thread::sleep(throttle_ms);
-                        ()
+                        thread::sleep(
+                            Duration::from_millis(
+                                self_1.lock().unwrap().config.throttle_ms));
                     },
                     Err(e) => {
                         error!("Send Loop: {:?}", e);
-                        let _ = sender.send_message(&WSMessage::close());
-                        return;
+                        let _ = sender.send_message(&Message::close());
+                        return Ok(());
                     }
                 }
             }
         });
 
+        debug!("Spawning receive loop thread");
         let recv_loop = thread::spawn(move || {
             for message in receiver.incoming_messages() {
-                let message: WSMessage = match message {
+                let message: Message = match message {
                     Ok(m) => m,
                     Err(e) => {
                         error!("Receive Loop: {:?}", e);
-                        let _ = tx.lock().unwrap().send(WSMessage::close());
+                        let _ = tx.lock().unwrap().send(Message::close());
                         return;
                     }
                 };
 
                 match message.opcode {
-                    // Send closure when closure is received and return
+                    // Send closure when closure is received
                     Type::Close => {
-                        let _ = tx.lock().unwrap()
-                            .send(WSMessage::close());
+                        let _ = tx.lock().unwrap().send(Message::close());
                         return;
-                    }
-                    // Pong when we get pinged
+                    },
+
+                    // Pong when pinged
                     Type::Ping => match tx.lock().unwrap()
-                        .send(WSMessage::pong(message.payload)) {
+                        .send(Message::pong(message.payload)) {
                         Ok(()) => (),
                         Err(e) => {
                             error!("Receive Loop: {:?}", e);
                             return;
                         }
                     },
+
                     // Handle a normal server message
                     _ => {
                         let payload = match String::from_utf8(
@@ -198,12 +167,29 @@ impl Bot {
                         }
 
                         for message in messages {
-                            println!("\x1b[32m↳\x1b[0m{}",
-                                     format!("{}{}", room, message));
-                            let m = Message::from_string(String::from(
-                                    format!("{}\n{}", room, message)), &self_3);
-                            debug!("rooms: {:?}", self_3.lock().unwrap().room_map);
-                            m.handle(&self_3);
+                            info!("\x1b[32m↳\x1b[0m{}", room.to_owned() + message);
+
+                            let m = ::Message::from_string(String::from(
+                                    format!("{}\n{}", room, message)), &self_2);
+
+                            match m.handle(&self_2) {
+                                Err(e) => {
+                                    error!("Failed to handle message: {:?}", e);
+                                    return;
+                                },
+                                _ => (),
+                            }
+
+                            if !m.payload.is_empty() && m.timestamp >=
+                                self_2.lock().unwrap().login_time {
+                                for p in plugins.iter()
+                                    .filter(|&p| p.lock().unwrap().is_match(&m)) {
+                                    //debug!("[plugin] Spawning thread for plugin");
+                                    //thread::spawn(move || {
+                                        p.lock().unwrap().handle(&m);
+                                    //});
+                                }
+                            }
                         }
                     },
                 }
@@ -216,11 +202,11 @@ impl Bot {
             let trimmed = input.trim();
             let message = match trimmed {
                 "/close" => {
-                    let _ = tx_1.lock().unwrap().send(WSMessage::close());
+                    let _ = tx_1.lock().unwrap().send(Message::close());
                     break;
                 }
-                "/ping" => WSMessage::ping(b"PING".to_vec()),
-                _ => WSMessage::text(trimmed.to_string()),
+                "/ping" => Message::ping(b"PING".to_vec()),
+                _ => Message::text(trimmed.to_string()),
             };
 
             match tx_1.lock().unwrap().send(message) {
@@ -238,12 +224,17 @@ impl Bot {
         let _ = recv_loop.join();
 
         info!("Exited");
+        Ok(())
+    }
+
+    pub fn register(&self, plugin: Box<::Plugin>) {
+        self.plugins.lock().unwrap().push(Arc::new(Mutex::new(plugin)));
     }
 
     /// Send a `String` to the websocket. For convenience, allow any Type that
     /// implements `Into<String>`.
-    pub fn send<S: Into<String>>(&self, s: S) {
-        match self.tx.lock().unwrap().send(WSMessage::text(s.into())) {
+    pub fn send<S: Into<String>>(&self, text: S) {
+        match self.tx.lock().unwrap().send(Message::text(text.into())) {
             Err(e) => {
                 error!("Failed to send to websocket: {:?}", e);
                 return;
@@ -251,84 +242,54 @@ impl Bot {
             _ => return,
         }
     }
-    /*
-    pub fn send_message(&self, m: &Message) {
-        match self.ptx.lock().unwrap().send(m) {
-            Ok(()) => return,
-            Err(e) => {
-                error!("Failed to send message to plugins: {:?}", e);
-                return;
-            }
-        }
-    }
-
-    pub fn recv_message(&self) -> &Message {
-        match self.prx.lock().unwrap().recv() {
-            Ok(m) => m,
-            Err(e) => {
-                error!("Failed to receive plugin message: {:?}", e);
-                panic!(e);
-            }
-        }
-    }*/
-
-    /// Log in using username and password in config.
-    pub fn login(&self, challstr: &str) {
-        let client = HTTPClient::new().unwrap();
-        let config_1 = self.config.clone();
-        let config_2 = self.config.clone();
-
-        let mut params = HashMap::new();
-        params.insert("act", "login");
-        params.insert("name", &config_1.user);
-        params.insert("pass", &config_2.pass);
-        params.insert("challstr", challstr);
-
-        let mut res = match client.post("https://play.pokemonshowdown.com/action.php")
-            .form(&params)
-            .send() {
-                Ok(r) => r,
-                Err(e) => {
-                    error!("Failed to login: {:?}", e);
-                    return;
-                }
-            };
-
-        let mut buf = String::new();
-        match res.read_to_string(&mut buf) {
-            Ok(s) => s,
-            Err(e) => {
-                error!("Failed to read to buf {:?}", e);
-                return;
-            }
-        };
-
-        let data_str = &buf[1..];
-        let data = Json::from_str(data_str).unwrap();
-        let obj = data.as_object().unwrap();
-        let assertion = obj.get("assertion").unwrap().as_string().unwrap();
-        self.send(format!("|/trn {},0,{}",
-                          self.config.clone().user, assertion));
-    }
 
     /// Join a room and update the state given the room name.
     pub fn join_room(&mut self, name: &str) {
         self.room_map.insert(name);
-        self.rooms_in.lock().unwrap()
-            .insert(String::from(name));
+        self.rooms_in.insert(String::from(name));
         self.send(format!("|/join {}", name));
     }
 
     /// Leave a room and update the state given the room name.
     pub fn leave_room(&mut self, name: &str) {
         self.room_map.remove(name);
-        self.rooms_in.lock().unwrap()
-            .remove(name);
+        self.rooms_in.remove(name);
         self.send(format!("|/leave {}", name));
     }
 
     /// Set the login time.
     pub fn set_login_time(&mut self, timestamp: u32) {
         self.login_time = timestamp;
+    }
+
+    pub fn login(&self, challstr: &str) -> ::Result<()> {
+        let client = ::reqwest::Client::new().unwrap();
+        let sanitized_user = &::helpers::sanitize(&self.config.user);
+
+        let mut params = HashMap::new();
+        if self.config.pass.is_empty() {
+            params.insert("act", "getassertion");
+            params.insert("userid", sanitized_user);
+        } else {
+            params.insert("act", "login");
+            params.insert("name", &self.config.user);
+            params.insert("pass", &self.config.pass);
+        }
+        params.insert("challstr", challstr);
+
+        let mut res = client
+            .post("https://play.pokemonshowdown.com/action.php")
+            .form(&params)
+            .send()?;
+
+        let mut buf = String::new();
+        res.read_to_string(&mut buf)?;
+        let data_str = &buf[1..];
+
+        let v: Value = ::serde_json::from_str(&data_str)?;
+        let assertion = v["assertion"].as_str().unwrap();
+
+        self.send(format!("|/trn {},0,{}", self.config.user, assertion));
+        Ok(())
     }
 }

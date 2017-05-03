@@ -1,19 +1,18 @@
-use time::{Tm, now};
 use std::sync::{Arc, Mutex};
+use time::{Tm, now};
 
-use bot::Bot;
 use target::{Target, User, Room};
 
 /// A `Message` is a message from the server, parsed to make sense of
 /// Pokemon Showdown's custom protocol.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Message<'a> {
-    bot: &'a Arc<Mutex<Bot>>,
+    bot: &'a Arc<Mutex<::Bot>>,
     pub received: Tm,
     pub timestamp: u32,
     pub command: String,
     pub params: Vec<String>,
-    private: bool,
+    pub private: bool,
     pub room: Room,
     pub user: User,
     pub auth: String,
@@ -22,7 +21,7 @@ pub struct Message<'a> {
 
 impl<'a> Message<'a> {
     /// Creates a new `Message` by serializing the message in text form.
-    pub fn from_string(text: String, bot: &'a Arc<Mutex<Bot>>) -> Self {
+    pub fn from_string(text: String, bot: &'a Arc<Mutex<::Bot>>) -> Self {
         let received = now();
 
         let nl_delim: Vec<&str> = text.split("\n").collect();
@@ -107,50 +106,45 @@ impl<'a> Message<'a> {
         }
 
         Message {
-            bot: bot,
-            received: received,
-            timestamp: timestamp,
-            command: command,
-            params: params,
-            private: private,
+            bot,
+            received,
+            timestamp,
+            command,
+            params,
+            private,
             room: Target::new(&room),
             user: Target::new(&user),
-            auth: auth,
-            payload: payload,
+            auth,
+            payload,
         }
     }
 
     /// Handles server messages.
-    pub fn handle(&self, bot: &Arc<Mutex<Bot>>) {
+    pub fn handle(&self, bot: &'a Arc<Mutex<::Bot>>) -> ::Result<()> {
         match &*self.command {
             // |battle|ROOMID|USER1|USER2 or |b|ROOMID|USER1|USER2
-            "b" | "battle" => return,
+            "b" | "battle" => Ok(()),
 
             // |challstr|CHALLSTR
             "challstr" => {
                 info!("Attempting to log in...");
                 bot.lock().unwrap().login(
-                    &format!("{}|{}", &self.params[0], &self.params[1]));
+                    &format!("{}|{}", &self.params[0], &self.params[1]))?;
+                Ok(())
             },
 
             // |c:|TIMESTAMP|USER|MESSAGE
-            "c:" => {
-                if bot.lock().unwrap().login_time == 0 { return; }
-                // TODO: Handle plugins
-                /*if !self.payload.is_empty() &&
-                    self.timestamp >= bot.lock().unwrap().login_time {
-                        bot.lock().unwrap().send_message(self);
-                    }*/
-            },
+            // Chat events are handled in the receive loop.
+            "c:" => Ok(()),
 
             // |formats|FORMATSLIST
-            "formats" => return,
+            "formats" => Ok(()),
 
             // |html|HTML
-            "html" => return,
+            "html" => Ok(()),
 
             // |init|ROOMTYPE
-            "init" => return,
+            "init" => Ok(()),
 
             // |join|USER or |j|USER
             "j" | "join" => {
@@ -159,19 +153,21 @@ impl<'a> Message<'a> {
                 bot.lock().unwrap().user_map
                     .add_auth_to_user_in_room(
                         &self.auth, &self.user.name, &self.room.name);
+                Ok(())
             },
 
             // |leave|USER or |l|USER
             "l" | "leave" => {
                 bot.lock().unwrap().room_map
                     .remove_user_from_room(&self.user.name, &self.room.name);
+                Ok(())
             },
 
             // ||MESSAGE or MESSAGE
-            "" => return,
+            "" => Ok(()),
 
             // |nametaken|USERNAME|MESSAGE
-            "nametaken" => return,
+            "nametaken" => Ok(()),
 
             // |name|USER|OLDID or |n|USER|OLDID
             "n" | "name" => {
@@ -182,36 +178,38 @@ impl<'a> Message<'a> {
                 bot.lock().unwrap().user_map
                     .add_auth_to_user_in_room(
                         &self.auth, &self.user.name, &self.room.name);
+                Ok(())
             },
 
             // |popup|MESSAGE
-            "popup" => return,
+            "popup" => Ok(()),
 
             // |pm|SENDER|RECEIVER|MESSAGE
-            "pm" => return,
+            "pm" => Ok(()),
 
             // |queryresponse|QUERYTYPE|JSON
-            "queryresponse" => return,
+            "queryresponse" => Ok(()),
 
             // |tie
-            "tie" => return,
+            "tie" => Ok(()),
 
             // |:|TIMESTAMP
             ":" => {
                 bot.lock().unwrap().set_login_time(self.timestamp);
+                Ok(())
             },
 
             // |uhtml|NAME|HTML
-            "uhtml" => return,
+            "uhtml" => Ok(()),
 
             // |uhtmlchange|NAME|HTML
-            "uhtmlchange" => return,
+            "uhtmlchange" => Ok(()),
 
             // |updatechallenges|JSON
-            "updatechallenges" => return,
+            "updatechallenges" => Ok(()),
 
             // |updatesearch|JSON
-            "updatesearch" => return,
+            "updatesearch" => Ok(()),
 
             // |updateuser|USERNAME|NAMED|AVATAR
             "updateuser" => match &*self.params[1] {
@@ -222,6 +220,7 @@ impl<'a> Message<'a> {
                         bot.lock().unwrap()
                             .send(format!("|/avatar {}", avatar));
                     }
+                    Ok(())
                 },
                 "1" => {
                     let config = bot.lock().unwrap().config.clone();
@@ -229,44 +228,53 @@ impl<'a> Message<'a> {
                         bot.lock().unwrap().join_room(&r);
                     }
                     // TODO: start timed plugins
-                }
+                    Ok(())
+                },
                 _ => {
                     unreachable!();
                 }
             },
 
             // |usercount|USERCOUNT
-            "usercount" => return,
+            "usercount" => Ok(()),
 
             // |users|USERLIST
             "users" => {
                 for user in self.params[0].split(",").skip(1) {
-                    let auth_bytes: Vec<u8> = user.bytes().clone()
-                        .take(1).collect();
-                    let user_bytes: Vec<u8> = user.bytes().clone()
-                        .skip(1).collect();
-                    let auth = &String::from_utf8(auth_bytes).unwrap();
-                    let name = &String::from_utf8(user_bytes).unwrap();
+                    let auth: String = user.chars().take(1).collect();
+                    let user: String = user.chars().skip(1).collect();
                     bot.lock().unwrap().room_map
-                        .insert_user_in_room(name, &self.room.name);
+                        .insert_user_in_room(&user, &self.room.name);
                     bot.lock().unwrap().user_map
-                        .add_auth_to_user_in_room(auth, name, &self.room.name);
+                        .add_auth_to_user_in_room(&auth, &user, &self.room.name);
                 }
+                Ok(())
             },
 
             // |win|USER
-            "win" => return,
+            "win" => Ok(()),
 
             // Ignore commands we have no plan for
-            _ => return,
+            _ => Ok(())
         }
     }
 
-    #[allow(dead_code)]
-    pub fn reply(&self, text: &str) {
+    pub fn reply<S: Into<String>>(&self, text: S) {
+        let msg = &format!("({}) {}", self.user.name, text.into());
         match self.private {
-            false => { self.room.send(self.bot, text); },
-            true  => { self.user.send(self.bot, text); },
+            false => { self.room.send(self.bot, msg); },
+            true  => { self.user.send(self.bot, msg); }
         }
+    }
+
+    pub fn send<S: Into<String>>(&self, text: S) {
+        match self.private {
+            false => { self.room.send(self.bot, &text.into()); },
+            true  => { self.user.send(self.bot, &text.into()); }
+        }
+    }
+
+    pub fn prefix_string(&self) -> String {
+        self.bot.lock().unwrap().config.prefix_string()
     }
 }

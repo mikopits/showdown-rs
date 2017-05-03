@@ -1,0 +1,33 @@
+[package]
+name = "showdown"
+version = "0.0.1"
+authors = ["mikopits <mikopits@gmail.com>"]
+license = "MIT"
+
+[dependencies]
+env_logger = "0.4.2"
+lazy_static = "0.2.8"
+log = "0.3.7"
+regex = "0.2.1"
+reqwest = "0.5.1"
+serde = "1.0.0"
+serde_derive = "1.0.2"
+serde_json = "1.0.1"
+time = "0.1.36"
+toml = "0.4.0"
+websocket = "0.19.1"
+
+# Plugin dependencies
+chrono = { version = "0.3.1", features = ["rustc-serialize"] }
+csv = "0.15.0"
+rand = "0.3.15"
+rustc-serialize = "0.3.23"
+scoped_threadpool = "0.1.7"
+
+[lib]
+name = "showdown"
+path = "src/lib.rs"
+
+[[bin]]
+name = "showdown_bot_bin"
+path = "src/bin/bin.rs"
