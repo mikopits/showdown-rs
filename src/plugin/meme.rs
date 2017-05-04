@@ -18,13 +18,17 @@ static FILE_PATH: &str = "data/memes.csv";
 
 lazy_static! {
     static ref ANY_REGEX: Regex =
-        Regex::new(r"^(>|#|uhh\s|le\s)(info$|meme(info|\s.*)?)$").unwrap();
+        Regex::new(r"^(>|#|uhh\s|le\s)(info$|count$|meme(info|count|\s.*)?)$").unwrap();
     static ref GET_REGEX: Regex =
         Regex::new(r"^(>|#|uhh\s|le\s)meme$").unwrap();
     static ref ADD_REGEX: Regex =
         Regex::new(r"^(>|#|uhh\s|le\s)meme\s(.*)$").unwrap();
     static ref INFO_REGEX: Regex =
         Regex::new(r"^(>|#|uhh\s|le\s)(meme)?info$").unwrap();
+    static ref COUNT_REGEX: Regex =
+        Regex::new(r"^(>|#|uhh\s|le\s)(meme)?count$").unwrap();
+    static ref TRIGGER_REGEX: Regex =
+        Regex::new(r"pull(\s+)?(th|l)e(\s+)?trigger").unwrap();
 }
 
 #[derive(Clone, Debug, RustcEncodable, RustcDecodable)]
@@ -100,6 +104,10 @@ impl Plugin for MemePlugin {
         else if ADD_REGEX.is_match(&content) {
             if self.is_banned(msg) { return };
 
+            if TRIGGER_REGEX.is_match(&content) {
+                return msg.reply("Please don't bully me >.<;;;");
+            }
+
             let caps = ADD_REGEX.captures(&content).unwrap();
 
             let meme = Meme {
@@ -117,7 +125,7 @@ impl Plugin for MemePlugin {
             self.file.write_all(wtr.as_bytes()).unwrap();
 
             self.memes.push(meme.clone());
-            return msg.reply(meme.content + "is now a meme");
+            return msg.reply(meme.content + " is now a meme");
         }
 
         // Get meme info
@@ -129,6 +137,11 @@ impl Plugin for MemePlugin {
                                       m.author, m.date.to_rfc2822()));
                 }
             }
+        }
+
+        // Meme count
+        else if COUNT_REGEX.is_match(&content) {
+            return msg.reply(self.memes.len().to_string());
         }
     }
 }

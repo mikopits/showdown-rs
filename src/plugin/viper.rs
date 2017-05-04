@@ -32,7 +32,6 @@ impl Plugin for ViperPlugin {
     fn new() -> Box<Plugin> {
         let file = OpenOptions::new()
             .read(true)
-            .create(true)
             .open(FILE_PATH)
             .expect("Failed to open file");
 
