@@ -174,7 +174,7 @@ mod tests {
 
     #[test]
     fn add_user_test() {
-        let mut b = Bot::new(TEST_PATH);
+        let mut b = Bot::new(TEST_PATH).unwrap();
         assert!(!b.room_map.contains("testroom"));
         assert!(!b.room_map.contains_user_in_room("testuser", "testroom"));
         b.room_map.insert_user_in_room("testuser", "testroom");
@@ -184,7 +184,7 @@ mod tests {
 
     #[test]
     fn remove_user_test() {
-        let mut b = Bot::new(TEST_PATH);
+        let mut b = Bot::new(TEST_PATH).unwrap();
         b.room_map.insert_user_in_room("testuser", "testroom");
         assert!(b.room_map.contains_user_in_room("testuser", "testroom"));
         b.room_map.remove_user_from_room("testuser", "testroom");

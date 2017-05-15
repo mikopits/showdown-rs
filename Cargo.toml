@@ -1,6 +1,6 @@
 [package]
 name = "showdown"
-version = "0.0.1"
+version = "0.1.0"
 authors = ["mikopits <mikopits@gmail.com>"]
 license = "MIT"
 

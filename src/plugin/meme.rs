@@ -18,7 +18,8 @@ static FILE_PATH: &str = "data/memes.csv";
 
 lazy_static! {
     static ref ANY_REGEX: Regex =
-        Regex::new(r"^(>|#|uhh\s|le\s)(info$|count$|meme(info|count|\s.*)?)$").unwrap();
+        Regex::new(r"^(>|#|uhh\s|le\s)(info$|count$|meme(info|count|\s.*)?)$")
+        .unwrap();
     static ref GET_REGEX: Regex =
         Regex::new(r"^(>|#|uhh\s|le\s)meme$").unwrap();
     static ref ADD_REGEX: Regex =
@@ -187,24 +188,29 @@ impl MemePlugin {
 
     fn exists(&self, meme: &str) -> bool {
         let mut regex_builder = RegexBuilder::new(meme);
-        let regex = &regex_builder
-                    .case_insensitive(true)
-                    .ignore_whitespace(true)
-                    .build()
-                    .unwrap();
+        let regex = match regex_builder
+            .case_insensitive(true)
+            .ignore_whitespace(true)
+            .build() {
+            Ok(r) => r,
+            Err(e) => {
+                error!("Could not parse regex in MemePlugin::exists: {:?}", e);
+                return false
+            }
+        };
+
+        let regex_ref = &regex;
 
         // Create a threadpool holding 4 threads. Memes are in an unordered
         // vector so we must use brute force to check for matches.
         let mut pool = Pool::new(4);
-
-        // TODO Don't think atomic bool is necessary, but investigate this.
         let mut exists = false;
 
         pool.scoped(|scoped| {
             for m in &self.memes {
                 scoped.execute(move || {
-                    if regex.is_match(&m.content) {
-                        exists = true
+                    if regex_ref.is_match(&m.content) {
+                        exists = true;
                     };
                 });
 
