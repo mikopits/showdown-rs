@@ -11,7 +11,7 @@ throttle_ms = 333
 
 # The rooms the bot will automatically join.
 # Keep in mind that bots are not allowed in the lobby.
-rooms = ["showderp"]
+rooms = ["techcode"]
 
 # The avatar you want the bot to use.
 # Set to 0 to get a default avatar. Anything from 1 to 294 works.
