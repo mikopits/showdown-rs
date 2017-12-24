@@ -11,6 +11,11 @@ Clone the repo, write your own plugins, run `cargo run`.
 See example configuration file, and example plugins provided in the plugin mod
 to get started.
 
+You can also run `cargo build` then
+`RUST_LOG=debug ./target/debug/showdown_bot_bin` for debug level logging or
+`RUST_LOG=info ./target/debug/showdown_bot_bin` to print messages the bot sees
+(uses `env_logger` crate).
+
 NOTE: The `config.toml` and `.env` files should be placed in the root directory
 of the project.
 
