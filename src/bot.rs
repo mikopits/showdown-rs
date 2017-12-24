@@ -186,10 +186,11 @@ impl Bot {
                             }
 
                             if !m.payload.is_empty() && m.timestamp >=
-                                self_2.lock().unwrap().login_time {
+                                self_2.lock().unwrap().login_time ||
+                                m.private {
                                 for p in plugins.iter()
                                     .filter(|&p| p.lock().unwrap().is_match(&m)) {
-                                    //debug!("[plugin] Spawning thread for plugin");
+                                    debug!("[plugin] Spawning thread for plugin");
                                     //thread::spawn(move || {
                                         p.lock().unwrap().handle(&m);
                                     //});
