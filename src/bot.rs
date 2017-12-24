@@ -99,7 +99,7 @@ impl Bot {
                     }
                 };
 
-                info!("\x1b[33m↵\x1b[0m{}", text);
+                info!("\x1b[33m↵\x1b[0m {}", text);
 
                 // Send the message
                 match sender.send_message(&message) {
@@ -158,9 +158,13 @@ impl Bot {
                         };
 
                         let mut room = "";
-                        let mut messages: Vec<&str> = payload.split("\n").collect();
+                        let mut messages: Vec<&str> = payload.trim()
+                            .split("\n")
+                            .collect();
 
-                        let first: Vec<u8> = messages[0].bytes().take(1).collect();
+                        let first: Vec<u8> = messages[0].bytes()
+                            .take(1)
+                            .collect();
 
                         if first[0] == 62u8 {
                             room = messages[0];
@@ -168,7 +172,7 @@ impl Bot {
                         }
 
                         for message in messages {
-                            info!("\x1b[32m↳\x1b[0m{}", room.to_owned() + message);
+                            info!("\x1b[32m↳\x1b[0m {}", room.to_owned() + message);
 
                             let m = ::Message::from_string(String::from(
                                     format!("{}\n{}", room, message)), &self_2);
