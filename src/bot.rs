@@ -1,6 +1,7 @@
-use std::thread;
+﻿use std::thread;
 use std::time::Duration;
 use std::collections::{BTreeSet, HashMap};
+use std::env;
 use std::io::{Read, stdin};
 use std::path::Path;
 use std::sync::{Arc, Mutex, mpsc};
@@ -263,17 +264,23 @@ impl Bot {
     }
 
     pub fn login(&self, challstr: &str) -> ::Result<()> {
+        let (user, pass) = {
+            let u = env::var("BOT_USERNAME").unwrap();
+            let p = env::var("BOT_PASSWORD").unwrap();
+
+            (u, p)
+        };
         let client = ::reqwest::Client::new().unwrap();
-        let sanitized_user = &::helpers::sanitize(&self.config.user);
+        let sanitized_user = &::helpers::sanitize(&user);
 
         let mut params = HashMap::new();
-        if self.config.pass.is_empty() {
+        if pass.is_empty() {
             params.insert("act", "getassertion");
             params.insert("userid", sanitized_user);
         } else {
             params.insert("act", "login");
-            params.insert("name", &self.config.user);
-            params.insert("pass", &self.config.pass);
+            params.insert("name", &user);
+            params.insert("pass", &pass);
         }
         params.insert("challstr", challstr);
 
@@ -289,7 +296,7 @@ impl Bot {
         let v: Value = ::serde_json::from_str(&data_str)?;
         let assertion = v["assertion"].as_str().unwrap();
 
-        self.send(format!("|/trn {},0,{}", self.config.user, assertion));
+        self.send(format!("|/trn {},0,{}", user, assertion));
         Ok(())
     }
 }
