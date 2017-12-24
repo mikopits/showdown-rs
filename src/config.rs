@@ -11,10 +11,6 @@ pub struct Config {
     pub host: String,
     #[serde(default="default_port")]
     pub port: String,
-    #[serde(default="Default::default")]
-    pub user: String,
-    #[serde(default="Default::default")]
-    pub pass: String,
     #[serde(default="default_mps")]
     pub throttle_ms: u64,
     #[serde(default="Default::default")]

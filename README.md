@@ -11,6 +11,9 @@ Clone the repo, write your own plugins, run `cargo run`.
 See example configuration file, and example plugins provided in the plugin mod
 to get started.
 
+NOTE: The `config.toml` and `.env` files should be placed in the root directory
+of the project.
+
 Todos
 -----
 
